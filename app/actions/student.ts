@@ -26,6 +26,7 @@ export async function lookupStudentSession(
       .maybeSingle();
 
     if (lessonError) {
+      console.error('Lesson lookup error:', lessonError);
       return { success: false, error: 'Database error reading lesson' };
     }
 

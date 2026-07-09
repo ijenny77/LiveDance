@@ -44,18 +44,34 @@ function LessonRoomContent() {
 
         // Verify lesson is live
         if (currentLesson.status !== 'live') {
+          if (studentId === 'admin') {
+            router.push('/admin');
+            return;
+          }
           // If not live, redirect back to status or home
           const { data: student } = await supabase
             .from('students')
             .select('phone_number')
             .eq('id', studentId)
             .single();
-          
+
           if (student) {
             router.push(`/status?phone=${student.phone_number}&code=${currentLesson.lesson_code}`);
           } else {
             router.push('/');
           }
+          return;
+        }
+
+        // Admin/instructor bypass — skip payment check, just confirm an authenticated admin session
+        if (studentId === 'admin') {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            router.push('/admin/login');
+            return;
+          }
+          setLesson(currentLesson);
+          setAuthorized(true);
           return;
         }
 
@@ -118,6 +134,10 @@ function LessonRoomContent() {
     // Record attendance exit time
     try {
       // Find the last attendance record that hasn't finished
+      if (studentId === 'admin') {
+        router.push('/admin');
+        return;
+      }
       const { data: lastAttendance } = await supabase
         .from('attendance')
         .select('id')

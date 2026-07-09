@@ -74,13 +74,16 @@ create policy "Students can update attendance" on public.attendance for update u
 
 -- Enable realtime subscriptions for key tables (lessons and payments)
 -- (In Supabase, you do this by adding them to the supabase_realtime publication)
-begin;
-  -- remove the tables if they were already added to avoid errors
-  alter publication supabase_realtime remove table public.lessons;
-  alter publication supabase_realtime remove table public.payments;
+do $$
+begin
+  alter publication supabase_realtime add table public.lessons;
 exception
-  when others then null;
-end;
+  when duplicate_object then null;
+end $$;
 
-alter publication supabase_realtime add table public.lessons;
-alter publication supabase_realtime add table public.payments;
+do $$
+begin
+  alter publication supabase_realtime add table public.payments;
+exception
+  when duplicate_object then null;
+end $$;
