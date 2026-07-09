@@ -3,18 +3,23 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { Lesson, PaymentStatus, LessonStatus } from '@/types';
 
-interface LookupResponse {
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+interface SessionResponse {
   success: boolean;
   error?: string;
   lesson?: Lesson;
   paymentStatus?: PaymentStatus;
   studentId?: string;
+  token?: string;
 }
 
-export async function lookupStudentSession(
+// Looks up (or creates) the student + pending payment for a phone/lesson-code pair,
+// then mints a short-lived opaque token standing in for that identity in URLs.
+export async function startStudentSession(
   phoneNumber: string,
   lessonCode: string
-): Promise<LookupResponse> {
+): Promise<SessionResponse> {
   const supabaseAdmin = getSupabaseAdmin();
 
   try {
@@ -54,7 +59,7 @@ export async function lookupStudentSession(
       // Auto-create student. Default name can be 'Student (Phone Ending in XXX)'
       const lastFour = phoneNumber.slice(-4);
       const defaultName = `Dancer ${lastFour}`;
-      
+
       const { data: newStudent, error: createError } = await supabaseAdmin
         .from('students')
         .insert({
@@ -100,14 +105,84 @@ export async function lookupStudentSession(
       payment = newPayment;
     }
 
+    // 4. Mint a fresh session token for this student/lesson pair
+    const { data: session, error: sessionError } = await supabaseAdmin
+      .from('sessions')
+      .insert({
+        student_id: student.id,
+        lesson_id: lesson.id,
+        expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
+      })
+      .select('token')
+      .single();
+
+    if (sessionError) {
+      return { success: false, error: 'Failed to start session' };
+    }
+
     return {
       success: true,
       lesson: lesson as Lesson,
       paymentStatus: payment.status as PaymentStatus,
       studentId: student.id,
+      token: session.token,
     };
   } catch (err: any) {
-    console.error('Lookup Student Session Error:', err);
+    console.error('Start Student Session Error:', err);
+    return { success: false, error: err.message || 'An unexpected error occurred' };
+  }
+}
+
+// Resolves an opaque session token back into the lesson/payment status it represents.
+// Used by /status and /lesson/[id] instead of ever passing phone numbers or lesson codes around.
+export async function resolveSession(token: string): Promise<SessionResponse> {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  try {
+    const { data: session, error: sessionError } = await supabaseAdmin
+      .from('sessions')
+      .select('student_id, lesson_id, expires_at')
+      .eq('token', token)
+      .maybeSingle();
+
+    if (sessionError) {
+      return { success: false, error: 'Database error reading session' };
+    }
+
+    if (!session || new Date(session.expires_at) < new Date()) {
+      return { success: false, error: 'Your session has expired. Please enter your details again.' };
+    }
+
+    const { data: lesson, error: lessonError } = await supabaseAdmin
+      .from('lessons')
+      .select('*')
+      .eq('id', session.lesson_id)
+      .maybeSingle();
+
+    if (lessonError || !lesson) {
+      return { success: false, error: 'Lesson no longer exists' };
+    }
+
+    const { data: payment, error: paymentError } = await supabaseAdmin
+      .from('payments')
+      .select('status')
+      .eq('student_id', session.student_id)
+      .eq('lesson_id', session.lesson_id)
+      .maybeSingle();
+
+    if (paymentError || !payment) {
+      return { success: false, error: 'Payment record not found' };
+    }
+
+    return {
+      success: true,
+      lesson: lesson as Lesson,
+      paymentStatus: payment.status as PaymentStatus,
+      studentId: session.student_id,
+      token,
+    };
+  } catch (err: any) {
+    console.error('Resolve Session Error:', err);
     return { success: false, error: err.message || 'An unexpected error occurred' };
   }
 }

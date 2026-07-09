@@ -3,7 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { lookupStudentSession, joinLessonAttendance } from '@/app/actions/student';
+import { resolveSession, joinLessonAttendance } from '@/app/actions/student';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,27 +13,26 @@ import { Clock, AlertOctagon, CheckCircle2, Play, Music, ArrowLeft, RefreshCw } 
 function StatusContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const phone = searchParams.get('phone') || '';
-  const code = searchParams.get('code') || '';
+  const token = searchParams.get('token') || '';
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(null);
   const [studentId, setStudentId] = useState<string | null>(null);
-  
+
   // Countdown state for scheduled lessons
   const [countdownText, setCountdownText] = useState('');
 
   const fetchData = async () => {
-    if (!phone || !code) {
-      setError('Missing phone number or lesson code.');
+    if (!token) {
+      setError('Missing or invalid session link.');
       setLoading(false);
       return;
     }
 
     try {
-      const res = await lookupStudentSession(phone, code);
+      const res = await resolveSession(token);
       if (res.success && res.lesson && res.paymentStatus && res.studentId) {
         setLesson(res.lesson);
         setPaymentStatus(res.paymentStatus);
@@ -50,7 +49,7 @@ function StatusContent() {
 
   useEffect(() => {
     fetchData();
-  }, [phone, code]);
+  }, [token]);
 
   // Realtime connection
   useEffect(() => {
@@ -138,7 +137,7 @@ function StatusContent() {
     const res = await joinLessonAttendance(studentId, lesson.id);
     setLoading(false);
     if (res.success) {
-      router.push(`/lesson/${lesson.id}?studentId=${studentId}`);
+      router.push(`/lesson/${lesson.id}?token=${token}`);
     } else {
       alert('Could not join room. ' + res.error);
     }

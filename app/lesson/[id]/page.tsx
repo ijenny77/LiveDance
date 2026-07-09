@@ -3,6 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { resolveSession } from '@/app/actions/student';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Lesson } from '@/types';
@@ -12,83 +13,63 @@ function LessonRoomContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  
+
   const lessonId = params.id as string;
-  const studentId = searchParams.get('studentId') || '';
+  const token = searchParams.get('token') || '';
 
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [studentId, setStudentId] = useState<string | null>(null);
 
   useEffect(() => {
     const verifyAccess = async () => {
-      if (!lessonId || !studentId) {
+      if (!lessonId || !token) {
         router.push('/');
         return;
       }
 
       try {
-        // 1. Fetch lesson
-        const { data: lessonData, error: lessonError } = await supabase
-          .from('lessons')
-          .select('*')
-          .eq('id', lessonId)
-          .single();
-
-        if (lessonError || !lessonData) {
-          router.push('/');
-          return;
-        }
-
-        const currentLesson = lessonData as Lesson;
-
-        // Verify lesson is live
-        if (currentLesson.status !== 'live') {
-          if (studentId === 'admin') {
-            router.push('/admin');
-            return;
-          }
-          // If not live, redirect back to status or home
-          const { data: student } = await supabase
-            .from('students')
-            .select('phone_number')
-            .eq('id', studentId)
-            .single();
-
-          if (student) {
-            router.push(`/status?phone=${student.phone_number}&code=${currentLesson.lesson_code}`);
-          } else {
-            router.push('/');
-          }
-          return;
-        }
-
-        // Admin/instructor bypass — skip payment check, just confirm an authenticated admin session
-        if (studentId === 'admin') {
+        // Admin/instructor bypass — skip the student session entirely, just confirm an authenticated admin session
+        if (token === 'admin') {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) {
             router.push('/admin/login');
             return;
           }
-          setLesson(currentLesson);
+
+          const { data: lessonData, error: lessonError } = await supabase
+            .from('lessons')
+            .select('*')
+            .eq('id', lessonId)
+            .single();
+
+          if (lessonError || !lessonData) {
+            router.push('/admin');
+            return;
+          }
+
+          setLesson(lessonData as Lesson);
           setAuthorized(true);
           return;
         }
 
-        // 2. Fetch payment status
-        const { data: paymentData, error: paymentError } = await supabase
-          .from('payments')
-          .select('status')
-          .eq('student_id', studentId)
-          .eq('lesson_id', lessonId)
-          .single();
+        // Resolve the opaque session token into the student/lesson/payment it represents
+        const res = await resolveSession(token);
 
-        if (paymentError || !paymentData || paymentData.status !== 'approved') {
+        if (!res.success || !res.lesson || !res.studentId || res.lesson.id !== lessonId) {
           router.push('/');
           return;
         }
 
-        setLesson(currentLesson);
+        // Not live yet, or payment not approved — send back to the status page (still valid token)
+        if (res.lesson.status !== 'live' || res.paymentStatus !== 'approved') {
+          router.push(`/status?token=${token}`);
+          return;
+        }
+
+        setLesson(res.lesson);
+        setStudentId(res.studentId);
         setAuthorized(true);
       } catch (err) {
         console.error('Error verifying lesson access:', err);
@@ -99,7 +80,7 @@ function LessonRoomContent() {
     };
 
     verifyAccess();
-  }, [lessonId, studentId]);
+  }, [lessonId, token]);
 
   // Subscribe to realtime changes in case the lesson is ended by the instructor while student is in room
   useEffect(() => {
@@ -119,7 +100,7 @@ function LessonRoomContent() {
           const updatedLesson = payload.new as Lesson;
           if (updatedLesson.status === 'ended') {
             // Log attendance exit and redirect
-            handleLeave(updatedLesson);
+            handleLeave();
           }
         }
       )
@@ -130,51 +111,38 @@ function LessonRoomContent() {
     };
   }, [lessonId, authorized]);
 
-  const handleLeave = async (updatedLesson?: Lesson) => {
+  const handleLeave = async () => {
+    if (token === 'admin') {
+      router.push('/admin');
+      return;
+    }
+
     // Record attendance exit time
     try {
-      // Find the last attendance record that hasn't finished
-      if (studentId === 'admin') {
-        router.push('/admin');
-        return;
-      }
-      const { data: lastAttendance } = await supabase
-        .from('attendance')
-        .select('id')
-        .eq('student_id', studentId)
-        .eq('lesson_id', lessonId)
-        .is('left_at', null)
-        .order('joined_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (lastAttendance) {
-        await supabase
+      if (studentId) {
+        const { data: lastAttendance } = await supabase
           .from('attendance')
-          .update({ left_at: new Date().toISOString() })
-          .eq('id', lastAttendance.id);
+          .select('id')
+          .eq('student_id', studentId)
+          .eq('lesson_id', lessonId)
+          .is('left_at', null)
+          .order('joined_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (lastAttendance) {
+          await supabase
+            .from('attendance')
+            .update({ left_at: new Date().toISOString() })
+            .eq('id', lastAttendance.id);
+        }
       }
     } catch (e) {
       console.error('Failed to log attendance departure', e);
     }
 
-    // Redirect back to status page
-    if (lesson || updatedLesson) {
-      const codeToUse = updatedLesson?.lesson_code || lesson?.lesson_code || '';
-      const { data: student } = await supabase
-        .from('students')
-        .select('phone_number')
-        .eq('id', studentId)
-        .single();
-      
-      if (student && codeToUse) {
-        router.push(`/status?phone=${student.phone_number}&code=${codeToUse}`);
-      } else {
-        router.push('/');
-      }
-    } else {
-      router.push('/');
-    }
+    // Redirect back to status page using the same token — no need to re-derive phone/code
+    router.push(`/status?token=${token}`);
   };
 
   if (loading) {

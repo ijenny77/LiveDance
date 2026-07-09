@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Music, Radio } from 'lucide-react';
+import { startStudentSession } from '@/app/actions/student';
 
 export default function StudentEntryPage() {
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function StudentEntryPage() {
     setLessonCode(e.target.value.toUpperCase().trim());
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -55,8 +56,13 @@ export default function StudentEntryPage() {
     }
 
     setIsLoading(true);
-    // Redirect to status page
-    router.push(`/status?phone=${encodeURIComponent(cleanPhone)}&code=${encodeURIComponent(lessonCode)}`);
+    const res = await startStudentSession(cleanPhone, lessonCode);
+    if (res.success && res.token) {
+      router.push(`/status?token=${res.token}`);
+    } else {
+      setError(res.error || 'Failed to start session');
+      setIsLoading(false);
+    }
   };
 
   return (

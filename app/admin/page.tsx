@@ -295,7 +295,7 @@ export default function AdminDashboard() {
                     >
                       <Square className="h-5 w-5 fill-current" /> End Lesson
                     </Button>
-                    <Link href={`/lesson/${activeControlLesson.id}?studentId=admin`} className="flex-grow">
+                    <Link href={`/lesson/${activeControlLesson.id}?token=admin`} className="flex-grow">
                       <Button variant="outline" className="w-full py-4 h-full text-base font-bold">
                         Join Instructor View
                       </Button>
