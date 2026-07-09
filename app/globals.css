@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-base: #0D0D12;
+  --color-bg-elevated: #16151C;
+  --color-bg-elevated-2: #1E1D27;
+  
+  --color-uv-purple: #7B2FF7;
+  --color-uv-blue: #00C2FF;
+  --color-accent-glow: #A855F7;
+  
+  --color-text-primary: #F5F4F7;
+  --color-text-secondary: #9A97A8;
+  --color-text-disabled: #5C5966;
+  
+  --color-success: #22D3A6;
+  --color-warning: #FFB020;
+  --color-error: #FF4D6D;
+  
+  --color-border: #2A2933;
+
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-heading: var(--font-space-grotesk), system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.025em;
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(123, 47, 247, 0.3), 0 0 20px rgba(0, 194, 255, 0.2);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(123, 47, 247, 0.6), 0 0 35px rgba(0, 194, 255, 0.4);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes indicator-glow {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@utility bg-uv-gradient {
+  background: linear-gradient(135deg, #7B2FF7 0%, #00C2FF 100%);
+}
+
+@utility text-uv-gradient {
+  background: linear-gradient(135deg, #7B2FF7 0%, #00C2FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@utility border-glow {
+  box-shadow: 0 0 15px rgba(123, 47, 247, 0.15);
+}
+
+@utility animate-live-pulse {
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+@utility animate-indicator-pulse {
+  animation: indicator-glow 1.5s infinite ease-in-out;
+}
+
