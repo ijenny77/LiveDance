@@ -150,6 +150,10 @@ export async function resolveSession(token: string): Promise<SessionResponse> {
     }
 
     if (!session || new Date(session.expires_at) < new Date()) {
+      if (session) {
+        // Lazily clean up the expired row instead of letting the table grow unbounded
+        await supabaseAdmin.from('sessions').delete().eq('token', token);
+      }
       return { success: false, error: 'Your session has expired. Please enter your details again.' };
     }
 
@@ -187,14 +191,53 @@ export async function resolveSession(token: string): Promise<SessionResponse> {
   }
 }
 
-// Log attendance record
+// Resolves a session token to the {studentId, lessonId} it grants, or null if
+// the token is missing/expired. Shared by the attendance actions below so that
+// attendance can only ever be logged for the student/lesson a valid token actually
+// represents — never for an arbitrary caller-supplied id.
+async function getActiveSessionIdentity(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>,
+  token: string
+): Promise<{ studentId: string; lessonId: string } | null> {
+  const { data: session } = await supabaseAdmin
+    .from('sessions')
+    .select('student_id, lesson_id, expires_at')
+    .eq('token', token)
+    .maybeSingle();
+
+  if (!session || new Date(session.expires_at) < new Date()) {
+    return null;
+  }
+
+  return { studentId: session.student_id, lessonId: session.lesson_id };
+}
+
+// Log attendance record. Takes a session token (not raw ids) so a caller can only
+// ever affect the attendance row for the student/lesson their own valid token grants.
 export async function joinLessonAttendance(
-  studentId: string,
-  lessonId: string
+  token: string
 ): Promise<{ success: boolean; error?: string; attendanceId?: string }> {
   const supabaseAdmin = getSupabaseAdmin();
-  
+
   try {
+    const identity = await getActiveSessionIdentity(supabaseAdmin, token);
+    if (!identity) {
+      return { success: false, error: 'Invalid or expired session' };
+    }
+    const { studentId, lessonId } = identity;
+
+    // Only log attendance if the payment for this lesson has actually been approved
+    const { data: payment } = await supabaseAdmin
+      .from('payments')
+      .select('status')
+      .eq('student_id', studentId)
+      .eq('lesson_id', lessonId)
+      .maybeSingle();
+
+    if (!payment || payment.status !== 'approved') {
+      return { success: false, error: 'Payment not approved for this lesson' };
+    }
+
     // Check if active attendance already exists
     const { data: existing } = await supabaseAdmin
       .from('attendance')
@@ -203,7 +246,7 @@ export async function joinLessonAttendance(
       .eq('lesson_id', lessonId)
       .is('left_at', null)
       .maybeSingle();
-      
+
     if (existing) {
       return { success: true, attendanceId: existing.id };
     }
@@ -223,6 +266,43 @@ export async function joinLessonAttendance(
     }
 
     return { success: true, attendanceId: data.id };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Records the exit time for the caller's own active attendance row, resolved from
+// their session token — mirrors joinLessonAttendance's ownership guarantee.
+export async function leaveLessonAttendance(
+  token: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  try {
+    const identity = await getActiveSessionIdentity(supabaseAdmin, token);
+    if (!identity) {
+      return { success: false, error: 'Invalid or expired session' };
+    }
+    const { studentId, lessonId } = identity;
+
+    const { data: lastAttendance } = await supabaseAdmin
+      .from('attendance')
+      .select('id')
+      .eq('student_id', studentId)
+      .eq('lesson_id', lessonId)
+      .is('left_at', null)
+      .order('joined_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastAttendance) {
+      await supabaseAdmin
+        .from('attendance')
+        .update({ left_at: new Date().toISOString() })
+        .eq('id', lastAttendance.id);
+    }
+
+    return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

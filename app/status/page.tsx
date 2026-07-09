@@ -19,7 +19,6 @@ function StatusContent() {
   const [error, setError] = useState('');
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(null);
-  const [studentId, setStudentId] = useState<string | null>(null);
 
   // Countdown state for scheduled lessons
   const [countdownText, setCountdownText] = useState('');
@@ -33,10 +32,9 @@ function StatusContent() {
 
     try {
       const res = await resolveSession(token);
-      if (res.success && res.lesson && res.paymentStatus && res.studentId) {
+      if (res.success && res.lesson && res.paymentStatus) {
         setLesson(res.lesson);
         setPaymentStatus(res.paymentStatus);
-        setStudentId(res.studentId);
       } else {
         setError(res.error || 'Failed to retrieve status');
       }
@@ -51,11 +49,10 @@ function StatusContent() {
     fetchData();
   }, [token]);
 
-  // Realtime connection
+  // Realtime connection — lessons stay public-readable, so postgres_changes still works here
   useEffect(() => {
-    if (!lesson || !studentId) return;
+    if (!lesson) return;
 
-    // 1. Subscribe to Lesson updates (e.g. status changes from scheduled -> live -> ended)
     const lessonChannel = supabase
       .channel(`lesson-status:${lesson.id}`)
       .on(
@@ -73,32 +70,26 @@ function StatusContent() {
       )
       .subscribe();
 
-    // 2. Subscribe to Payment updates (e.g. status changes from pending -> approved)
-    const paymentChannel = supabase
-      .channel(`payment-status:${studentId}:${lesson.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'payments',
-          filter: `student_id=eq.${studentId}`,
-        },
-        async (payload) => {
-          // If the status updated, let's refresh our local state
-          const updatedPayment = payload.new as any;
-          if (updatedPayment && updatedPayment.lesson_id === lesson.id) {
-            setPaymentStatus(updatedPayment.status as PaymentStatus);
-          }
-        }
-      )
-      .subscribe();
-
     return () => {
       supabase.removeChannel(lessonChannel);
-      supabase.removeChannel(paymentChannel);
     };
-  }, [lesson?.id, studentId]);
+  }, [lesson?.id]);
+
+  // Payments has no public RLS policy (closing the read-all hole), so we can't subscribe
+  // to it directly with the anon client anymore — poll resolveSession instead, which
+  // reads payment status server-side via the service-role client.
+  useEffect(() => {
+    if (!token || !lesson || lesson.status === 'ended') return;
+
+    const interval = setInterval(async () => {
+      const res = await resolveSession(token);
+      if (res.success && res.paymentStatus) {
+        setPaymentStatus(res.paymentStatus);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [token, lesson?.id, lesson?.status]);
 
   // Lesson Countdown Timer
   useEffect(() => {
@@ -131,10 +122,10 @@ function StatusContent() {
   }, [lesson]);
 
   const handleJoin = async () => {
-    if (!studentId || !lesson) return;
+    if (!token || !lesson) return;
     setLoading(true);
     // Log attendance before redirect
-    const res = await joinLessonAttendance(studentId, lesson.id);
+    const res = await joinLessonAttendance(token);
     setLoading(false);
     if (res.success) {
       router.push(`/lesson/${lesson.id}?token=${token}`);

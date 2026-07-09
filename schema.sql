@@ -79,14 +79,19 @@ create policy "Admins have full access to attendance" on public.attendance for a
 create policy "Admins have full access to sessions" on public.sessions for all using (auth.role() = 'authenticated');
 
 -- Student/Public policies
+-- Lessons stay public-readable (titles/prices/status are not sensitive and the
+-- home page needs to validate lesson codes before any session exists).
 create policy "Public/Students can view lessons" on public.lessons for select using (true);
-create policy "Public/Students can check payments" on public.payments for select using (true);
-create policy "Students can insert attendance" on public.attendance for insert with check (true);
-create policy "Students can update attendance" on public.attendance for update using (true);
 
--- Note: no public/anon policy on public.sessions. Tokens are only ever minted or
--- resolved server-side via the service-role client in app/actions/student.ts,
--- so anonymous clients have zero direct access to the sessions table.
+-- Note: no public/anon policy on public.payments, public.attendance, or public.sessions.
+-- All student-side reads/writes to those three tables go through server actions
+-- (startStudentSession, resolveSession, joinLessonAttendance, leaveLessonAttendance in
+-- app/actions/student.ts) using the service-role client, which bypasses RLS entirely.
+-- This closes two holes the earlier open policies had:
+--   - anyone with the public anon key could previously read every row of `payments`
+--   - anyone with the public anon key could previously insert/update ANY `attendance`
+--     row for any student/lesson pair (no ownership check was possible without a
+--     real per-student identity, which server-side token resolution now provides)
 
 -- Enable realtime subscriptions for key tables (lessons and payments)
 -- (In Supabase, you do this by adding them to the supabase_realtime publication)

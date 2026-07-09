@@ -3,7 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { resolveSession } from '@/app/actions/student';
+import { resolveSession, leaveLessonAttendance } from '@/app/actions/student';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Lesson } from '@/types';
@@ -20,7 +20,6 @@ function LessonRoomContent() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [lesson, setLesson] = useState<Lesson | null>(null);
-  const [studentId, setStudentId] = useState<string | null>(null);
 
   useEffect(() => {
     const verifyAccess = async () => {
@@ -69,7 +68,6 @@ function LessonRoomContent() {
         }
 
         setLesson(res.lesson);
-        setStudentId(res.studentId);
         setAuthorized(true);
       } catch (err) {
         console.error('Error verifying lesson access:', err);
@@ -117,26 +115,10 @@ function LessonRoomContent() {
       return;
     }
 
-    // Record attendance exit time
+    // Record attendance exit time via server action (resolves the token to the
+    // caller's own student/lesson identity server-side — no raw ids trusted from the client)
     try {
-      if (studentId) {
-        const { data: lastAttendance } = await supabase
-          .from('attendance')
-          .select('id')
-          .eq('student_id', studentId)
-          .eq('lesson_id', lessonId)
-          .is('left_at', null)
-          .order('joined_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (lastAttendance) {
-          await supabase
-            .from('attendance')
-            .update({ left_at: new Date().toISOString() })
-            .eq('id', lastAttendance.id);
-        }
-      }
+      await leaveLessonAttendance(token);
     } catch (e) {
       console.error('Failed to log attendance departure', e);
     }

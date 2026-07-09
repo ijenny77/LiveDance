@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -8,8 +8,18 @@ if (!supabaseUrl) {
   console.warn('Supabase URL is not set. Check your environment variables.');
 }
 
-// Client for general browser usage (anon key)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+declare global {
+  // eslint-disable-next-line no-var
+  var __supabaseBrowserClient: SupabaseClient | undefined;
+}
+
+// Client for general browser usage (anon key). Pinned to globalThis so that if the
+// dev bundler ever loads separate copies of this module across different route
+// chunks, they all share one instance instead of each minting its own GoTrueClient
+// against the same localStorage key (source of the "Multiple GoTrueClient instances" warning).
+export const supabase =
+  globalThis.__supabaseBrowserClient ??
+  (globalThis.__supabaseBrowserClient = createClient(supabaseUrl, supabaseAnonKey));
 
 // Client for administrative backend operations (service role key, bypasses RLS)
 export const getSupabaseAdmin = () => {
