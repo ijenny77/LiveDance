@@ -34,7 +34,7 @@ export function AdminPaymentsScreen({ navigation }: Props) {
   useEffect(() => {
     fetchPayments();
     const channel = supabase
-      .channel('admin-payments-sync')
+      .channel(`admin-payments-sync:${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchPayments)
       .subscribe();
     return () => {

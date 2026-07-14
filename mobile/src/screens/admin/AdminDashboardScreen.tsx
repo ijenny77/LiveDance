@@ -51,7 +51,7 @@ export function AdminDashboardScreen({ navigation }: Props) {
   useEffect(() => {
     loadData();
     const channel = supabase
-      .channel('admin-dashboard-sync')
+      .channel(`admin-dashboard-sync:${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lessons' }, loadData)
       .subscribe();

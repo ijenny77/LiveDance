@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -16,6 +17,7 @@ export function LessonRoomScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const leftRef = useRef(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     const verify = async () => {
@@ -66,7 +68,7 @@ export function LessonRoomScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (!lesson) return;
     const channel = supabase
-      .channel(`lesson-room:${lesson.id}`)
+      .channel(`lesson-room:${lesson.id}:${Math.random().toString(36).slice(2)}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'lessons', filter: `id=eq.${lesson.id}` },
@@ -84,7 +86,7 @@ export function LessonRoomScreen({ route, navigation }: Props) {
 
   if (loading || !lesson) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { paddingTop: insets.top }]}>
         <ActivityIndicator color={colors.uvPurple} size="large" />
         <Text style={styles.loadingText}>Connecting to Live Room...</Text>
       </View>
@@ -96,7 +98,7 @@ export function LessonRoomScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View>
           <Text style={styles.title}>{lesson.title}</Text>
           <Text style={styles.subtitle}>LiveDance Room</Text>
@@ -117,6 +119,7 @@ export function LessonRoomScreen({ route, navigation }: Props) {
         javaScriptEnabled
         domStorageEnabled
         originWhitelist={['*']}
+        onShouldStartLoadWithRequest={(request) => request.url.startsWith('http')}
       />
     </View>
   );
