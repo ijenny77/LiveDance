@@ -1,15 +1,24 @@
 'use client';
 
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useEffect, useRef, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { LiveKitRoom, VideoConference } from '@livekit/components-react';
+import {
+  LiveKitRoom,
+  GridLayout,
+  ParticipantTile,
+  RoomAudioRenderer,
+  useLocalParticipant,
+  useChat,
+  useTracks,
+} from '@livekit/components-react';
+import { Track } from 'livekit-client';
 import { supabase } from '@/lib/supabase';
 import { resolveSession, leaveLessonAttendance } from '@/app/actions/student';
 import { getLiveKitToken } from '@/app/actions/livekit';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Lesson } from '@/types';
-import { Music, LogOut, Loader2 } from 'lucide-react';
+import { Music, LogOut, Loader2, Mic, MicOff, Video, VideoOff, MonitorUp, MessageSquare } from 'lucide-react';
 
 function LessonRoomContent() {
   const params = useParams();
@@ -193,8 +202,10 @@ function LessonRoomContent() {
         </div>
       </header>
 
-      {/* LiveKit Video Conference */}
-      <div className="flex-1 w-full bg-black relative">
+      {/* LiveKit call — built from low-level primitives (not the VideoConference/ControlBar
+          prefab) since ControlBar's built-in permission gate could hide every button but
+          Leave, with no way to work around it from the outside. */}
+      <div className="flex-1 w-full bg-black relative flex flex-col">
         <LiveKitRoom
           serverUrl={livekitUrl}
           token={livekitToken}
@@ -202,13 +213,172 @@ function LessonRoomContent() {
           audio
           video={false}
           onDisconnected={handleLeave}
-          style={{ height: '100%' }}
+          style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
           data-lk-theme="default"
         >
-          <VideoConference />
+          <CallVideoGrid />
+          <CallControls onLeave={handleLeave} />
+          <RoomAudioRenderer />
         </LiveKitRoom>
       </div>
     </div>
+  );
+}
+
+function CallVideoGrid() {
+  // Must be its own component rendered as a child of LiveKitRoom — calling
+  // useTracks() inline while constructing LiveKitRoom's children would run
+  // before the room context LiveKitRoom provides actually exists.
+  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+  return (
+    <div className="flex-1 min-h-0">
+      <GridLayout tracks={tracks}>
+        <ParticipantTile />
+      </GridLayout>
+    </div>
+  );
+}
+
+function ControlButton({
+  icon: Icon,
+  label,
+  active,
+  danger,
+  badge,
+  onClick,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  label: string;
+  active?: boolean;
+  danger?: boolean;
+  badge?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className={`relative flex h-12 w-12 items-center justify-center rounded-full transition ${
+        active
+          ? 'bg-uv-gradient'
+          : danger
+            ? 'bg-error'
+            : 'bg-bg-elevated-2 border border-border hover:bg-bg-elevated'
+      }`}
+    >
+      <Icon size={20} className="text-white" />
+      {!!badge && (
+        <span className="absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold text-white">
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function CallControls({ onLeave }: { onLeave: () => void }) {
+  const { localParticipant, isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } = useLocalParticipant();
+  const { chatMessages, send, isSending } = useChat();
+
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatText, setChatText] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const seenMessageCount = useRef(0);
+
+  useEffect(() => {
+    if (!chatOpen && chatMessages.length > seenMessageCount.current) {
+      setUnreadCount(chatMessages.length - seenMessageCount.current);
+    }
+  }, [chatMessages.length, chatOpen]);
+
+  const openChat = () => {
+    setChatOpen(true);
+    setUnreadCount(0);
+    seenMessageCount.current = chatMessages.length;
+  };
+
+  const handleSend = async () => {
+    const text = chatText.trim();
+    if (!text) return;
+    setChatText('');
+    await send(text);
+  };
+
+  return (
+    <>
+      <div className="flex flex-shrink-0 items-center justify-center gap-3 border-t border-border bg-bg-elevated py-4">
+        <ControlButton
+          icon={isMicrophoneEnabled ? Mic : MicOff}
+          label="Microphone"
+          active={isMicrophoneEnabled}
+          onClick={() => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
+        />
+        <ControlButton
+          icon={isCameraEnabled ? Video : VideoOff}
+          label="Camera"
+          active={isCameraEnabled}
+          onClick={() => localParticipant.setCameraEnabled(!isCameraEnabled)}
+        />
+        <ControlButton
+          icon={MonitorUp}
+          label="Share screen"
+          active={isScreenShareEnabled}
+          onClick={() => localParticipant.setScreenShareEnabled(!isScreenShareEnabled)}
+        />
+        <ControlButton icon={MessageSquare} label="Chat" badge={unreadCount} onClick={openChat} />
+        <ControlButton icon={LogOut} label="Leave" danger onClick={onLeave} />
+      </div>
+
+      {chatOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
+          onClick={() => setChatOpen(false)}
+        >
+          <div
+            className="flex w-full max-w-md flex-col rounded-t-2xl bg-bg-elevated p-4"
+            style={{ height: '65%' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-text-primary">Chat</h2>
+              <button type="button" onClick={() => setChatOpen(false)} className="text-xs font-semibold text-text-secondary">
+                Close
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-3">
+              {chatMessages.length === 0 ? (
+                <p className="text-center text-sm text-text-secondary">No messages yet — say hi!</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {chatMessages.map((msg) => (
+                    <div key={msg.id}>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-uv-blue">
+                        {msg.from?.name || msg.from?.identity || 'Someone'}
+                      </p>
+                      <p className="text-sm text-text-primary">{msg.message}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 border-t border-border pt-3">
+              <input
+                type="text"
+                value={chatText}
+                onChange={(e) => setChatText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder="Message"
+                className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm text-text-primary outline-none focus:border-uv-purple"
+              />
+              <Button onClick={handleSend} disabled={isSending || !chatText.trim()} className="px-4 py-2 text-xs">
+                Send
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
