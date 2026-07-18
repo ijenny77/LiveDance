@@ -1,13 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Pressable,
+  Modal,
+  FlatList,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   LiveKitRoom,
   AudioSession,
   useTracks,
   useLocalParticipant,
+  useChat,
   VideoTrack,
   isTrackReference,
+  type TrackReferenceOrPlaceholder,
 } from '@livekit/react-native';
 import { Track } from 'livekit-client';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -158,35 +171,134 @@ function CallView({ insetsBottom }: { insetsBottom: number }) {
   // withPlaceholder keeps every participant visible (as an avatar) even before
   // they've published a camera track — otherwise anyone joining camera-off is
   // invisible instead of just showing without video.
-  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
-  const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
+  const cameraTracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+  const screenShareTracks = useTracks([Track.Source.ScreenShare]);
+  const { localParticipant, isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } = useLocalParticipant();
+  const { chatMessages, send, isSending } = useChat();
+
+  const [focusedIdentity, setFocusedIdentity] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatText, setChatText] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const seenMessageCount = useRef(0);
+
+  useEffect(() => {
+    if (!chatOpen && chatMessages.length > seenMessageCount.current) {
+      setUnreadCount(chatMessages.length - seenMessageCount.current);
+    }
+  }, [chatMessages.length, chatOpen]);
+
+  const openChat = () => {
+    setChatOpen(true);
+    setUnreadCount(0);
+    seenMessageCount.current = chatMessages.length;
+  };
+
+  const handleSend = async () => {
+    const text = chatText.trim();
+    if (!text) return;
+    setChatText('');
+    await send(text);
+  };
+
+  // An active screen share always takes over the main view — someone sharing
+  // their screen wants everyone looking at it, overriding any manual focus.
+  const activeScreenShare = screenShareTracks[0];
+  const focusedCameraTrack = cameraTracks.find((t) => t.participant.identity === focusedIdentity);
+  const mainTrack: TrackReferenceOrPlaceholder | undefined = activeScreenShare || focusedCameraTrack;
+  const mainLabel = mainTrack ? mainTrack.participant.name || mainTrack.participant.identity : '';
 
   return (
     <View style={styles.callArea}>
-      <View style={styles.videoGrid}>
-        {tracks.map((track) => {
-          const label = track.participant.name || track.participant.identity;
-          return (
-            <View
-              key={`${track.participant.identity}-${track.source}`}
-              style={tracks.length === 1 ? styles.videoTileFull : styles.videoTileGrid}
-            >
-              {isTrackReference(track) ? (
-                <VideoTrack trackRef={track} style={styles.video} objectFit="cover" />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <View style={styles.avatarCircle}>
-                    <Text style={styles.avatarInitial}>{initials(label)}</Text>
+      {mainTrack ? (
+        <Pressable
+          style={styles.videoTileFull}
+          onPress={() => !activeScreenShare && setFocusedIdentity(null)}
+        >
+          {isTrackReference(mainTrack) ? (
+            <VideoTrack trackRef={mainTrack} style={styles.video} objectFit="contain" />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <View style={styles.avatarCircle}>
+                <Text style={styles.avatarInitial}>{initials(mainLabel)}</Text>
+              </View>
+            </View>
+          )}
+          <Text style={styles.videoLabel} numberOfLines={1}>
+            {mainLabel}
+            {activeScreenShare ? ' — Sharing Screen' : ''}
+          </Text>
+        </Pressable>
+      ) : (
+        <View style={styles.videoGrid}>
+          {cameraTracks.map((track) => {
+            const label = track.participant.name || track.participant.identity;
+            return (
+              <Pressable
+                key={`${track.participant.identity}-${track.source}`}
+                style={cameraTracks.length === 1 ? styles.videoTileFull : styles.videoTileGrid}
+                onPress={() => setFocusedIdentity(track.participant.identity)}
+              >
+                {isTrackReference(track) ? (
+                  <VideoTrack trackRef={track} style={styles.video} objectFit="cover" />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <View style={styles.avatarCircle}>
+                      <Text style={styles.avatarInitial}>{initials(label)}</Text>
+                    </View>
                   </View>
+                )}
+                <Text style={styles.videoLabel} numberOfLines={1}>
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
+      <Modal visible={chatOpen} animationType="slide" transparent onRequestClose={() => setChatOpen(false)}>
+        <KeyboardAvoidingView
+          style={styles.chatBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.chatPanel}>
+            <View style={styles.chatHeader}>
+              <Text style={styles.chatTitle}>Chat</Text>
+              <Pressable onPress={() => setChatOpen(false)}>
+                <Text style={styles.chatClose}>Close</Text>
+              </Pressable>
+            </View>
+            <FlatList
+              data={chatMessages}
+              keyExtractor={(item) => item.id}
+              style={styles.chatList}
+              contentContainerStyle={{ gap: 10, paddingVertical: 10 }}
+              renderItem={({ item }) => (
+                <View>
+                  <Text style={styles.chatSender}>{item.from?.name || item.from?.identity || 'Someone'}</Text>
+                  <Text style={styles.chatMessageText}>{item.message}</Text>
                 </View>
               )}
-              <Text style={styles.videoLabel} numberOfLines={1}>
-                {label}
-              </Text>
+              ListEmptyComponent={<Text style={styles.emptyCallText}>No messages yet — say hi!</Text>}
+            />
+            <View style={[styles.chatInputRow, { paddingBottom: insetsBottom + 10 }]}>
+              <TextInput
+                style={styles.chatInput}
+                value={chatText}
+                onChangeText={setChatText}
+                placeholder="Message"
+                placeholderTextColor={colors.textSecondary}
+                onSubmitEditing={handleSend}
+                returnKeyType="send"
+              />
+              <Pressable style={styles.chatSendBtn} disabled={isSending || !chatText.trim()} onPress={handleSend}>
+                <Text style={styles.controlText}>Send</Text>
+              </Pressable>
             </View>
-          );
-        })}
-      </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <View style={[styles.controls, { paddingBottom: insetsBottom + 14 }]}>
         <Pressable
@@ -200,6 +312,20 @@ function CallView({ insetsBottom }: { insetsBottom: number }) {
           onPress={() => localParticipant.setCameraEnabled(!isCameraEnabled)}
         >
           <Text style={styles.controlText}>{isCameraEnabled ? 'Camera Off' : 'Camera On'}</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.controlBtn, isScreenShareEnabled && styles.controlBtnOff]}
+          onPress={() => localParticipant.setScreenShareEnabled(!isScreenShareEnabled)}
+        >
+          <Text style={styles.controlText}>{isScreenShareEnabled ? 'Stop Sharing' : 'Share Screen'}</Text>
+        </Pressable>
+        <Pressable style={styles.controlBtn} onPress={openChat}>
+          <Text style={styles.controlText}>Chat</Text>
+          {unreadCount > 0 && (
+            <View style={styles.chatBadge}>
+              <Text style={styles.chatBadgeText}>{unreadCount}</Text>
+            </View>
+          )}
         </Pressable>
       </View>
     </View>
@@ -320,14 +446,17 @@ const styles = StyleSheet.create({
   },
   controls: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 12,
+    gap: 10,
     paddingVertical: 14,
+    paddingHorizontal: 10,
     backgroundColor: colors.bgElevated,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
   controlBtn: {
+    position: 'relative',
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
@@ -343,5 +472,99 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatBadgeText: {
+    color: colors.textPrimary,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  chatBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  chatPanel: {
+    height: '65%',
+    backgroundColor: colors.bgElevated,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  chatTitle: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  chatClose: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  chatList: {
+    flex: 1,
+  },
+  chatSender: {
+    color: colors.uvBlue,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  chatMessageText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+  },
+  emptyCallText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  chatInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  chatInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.textPrimary,
+    fontSize: 14,
+  },
+  chatSendBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: colors.bgElevated2,
   },
 });

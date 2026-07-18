@@ -22,7 +22,12 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.ijenny77.livedancemobile",
-      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -32,6 +37,9 @@
         "projectId": "7e831caa-ce77-410f-80d0-3191e5d97fb0"
       }
     },
-    "plugins": ["@livekit/react-native-expo-plugin", "@config-plugins/react-native-webrtc"]
+    "plugins": [
+      ["@livekit/react-native-expo-plugin", { "android": { "enableScreenShareService": true } }],
+      "@config-plugins/react-native-webrtc"
+    ]
   }
 }

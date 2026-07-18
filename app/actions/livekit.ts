@@ -72,7 +72,14 @@ export async function getLiveKitToken(
 
     lesson = res.lesson;
     identity = res.studentId || token;
-    name = 'Student';
+
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: studentRow } = await supabaseAdmin
+      .from('students')
+      .select('name')
+      .eq('id', res.studentId)
+      .maybeSingle();
+    name = studentRow?.name || 'Student';
   }
 
   const roomName = roomNameForLesson(lesson);

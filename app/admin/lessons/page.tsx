@@ -401,7 +401,7 @@ export default function AdminLessonsPage() {
               {/* Live Meeting Room Generator */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold uppercase tracking-wider text-text-secondary">
-                  Jitsi Room Identifier
+                  Room Identifier
                 </label>
                 <div className="flex gap-2">
                   <div className="flex-grow relative">
@@ -532,7 +532,7 @@ export default function AdminLessonsPage() {
               {/* Jitsi Room ID */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold uppercase tracking-wider text-text-secondary">
-                  Jitsi Room Identifier
+                  Room Identifier
                 </label>
                 <div className="flex gap-2">
                   <div className="flex-grow relative">

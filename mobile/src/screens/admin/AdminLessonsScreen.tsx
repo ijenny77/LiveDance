@@ -187,7 +187,7 @@ export function AdminLessonsScreen({ navigation }: Props) {
               </View>
               <Input label="Price ($)" keyboardType="decimal-pad" value={price} onChangeText={setPrice} />
               <Input label="Lesson Code" autoCapitalize="characters" value={lessonCode} onChangeText={(v) => setLessonCode(v.toUpperCase())} />
-              <Input label="Jitsi Room Identifier" value={meetingRoom} onChangeText={(v) => setMeetingRoom(v.toLowerCase().replace(/\s+/g, '-'))} />
+              <Input label="Room Identifier" value={meetingRoom} onChangeText={(v) => setMeetingRoom(v.toLowerCase().replace(/\s+/g, '-'))} />
 
               {!!formError && <Text style={styles.errorText}>{formError}</Text>}
 
