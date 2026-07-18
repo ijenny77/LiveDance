@@ -24,6 +24,7 @@ import {
   type TrackReferenceOrPlaceholder,
 } from '@livekit/react-native';
 import { Track } from 'livekit-client';
+import { Mic, MicOff, Video, VideoOff, MonitorUp, MessageSquare, LogOut } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Badge } from '../components/Badge';
@@ -157,7 +158,7 @@ export function LessonRoomScreen({ route, navigation }: Props) {
 
       <View style={styles.room}>
         <LiveKitRoom serverUrl={livekitUrl} token={livekitToken} connect audio video={false} onDisconnected={handleLeave}>
-          <CallView insetsBottom={insets.bottom} />
+          <CallView insetsBottom={insets.bottom} onLeave={handleLeave} />
         </LiveKitRoom>
       </View>
     </View>
@@ -178,28 +179,34 @@ function Avatar({ label }: { label: string }) {
   );
 }
 
+type IconComponent = React.ComponentType<{ size?: number; color?: string }>;
+
 function ControlButton({
+  icon: Icon,
   label,
   active,
   danger,
   badge,
   onPress,
 }: {
+  icon: IconComponent;
   label: string;
   active?: boolean;
   danger?: boolean;
   badge?: number;
   onPress: () => void;
 }) {
+  const iconColor = active || danger ? '#fff' : colors.textPrimary;
+
   const content = (
-    <View style={styles.controlBtnInner}>
-      <Text style={[styles.controlText, active && styles.controlTextActive]}>{label}</Text>
+    <>
+      <Icon size={20} color={iconColor} />
       {!!badge && (
         <View style={styles.chatBadge}>
           <Text style={styles.chatBadgeText}>{badge}</Text>
         </View>
       )}
-    </View>
+    </>
   );
 
   // Always render the same tree shape (Pressable > LinearGradient > content) and
@@ -209,22 +216,23 @@ function ControlButton({
   const fillColors = active
     ? ([colors.uvPurple, colors.uvBlue] as const)
     : danger
-      ? ([colors.error + '26', colors.error + '26'] as const)
+      ? ([colors.error, colors.error] as const)
       : ([colors.bgElevated2, colors.bgElevated2] as const);
 
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.controlBtnShape, pressed && styles.pressed]}>
-      <LinearGradient
-        colors={fillColors}
-        style={[styles.controlBtnFill, !active && styles.controlBtnBordered, danger && styles.controlBtnDangerBorder]}
-      >
+    <Pressable
+      onPress={onPress}
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.controlBtnShape, pressed && styles.pressed]}
+    >
+      <LinearGradient colors={fillColors} style={[styles.controlBtnFill, !active && !danger && styles.controlBtnBordered]}>
         {content}
       </LinearGradient>
     </Pressable>
   );
 }
 
-function CallView({ insetsBottom }: { insetsBottom: number }) {
+function CallView({ insetsBottom, onLeave }: { insetsBottom: number; onLeave: () => void }) {
   // withPlaceholder keeps every participant visible (as an avatar) even before
   // they've published a camera track — otherwise anyone joining camera-off is
   // invisible instead of just showing without video.
@@ -351,22 +359,25 @@ function CallView({ insetsBottom }: { insetsBottom: number }) {
 
       <View style={[styles.controls, { paddingBottom: insetsBottom + 14 }]}>
         <ControlButton
+          icon={isMicrophoneEnabled ? Mic : MicOff}
           label={isMicrophoneEnabled ? 'Mute' : 'Unmute'}
           active={isMicrophoneEnabled}
-          danger={!isMicrophoneEnabled}
           onPress={() => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
         />
         <ControlButton
+          icon={isCameraEnabled ? Video : VideoOff}
           label={isCameraEnabled ? 'Camera Off' : 'Camera On'}
           active={isCameraEnabled}
           onPress={() => localParticipant.setCameraEnabled(!isCameraEnabled)}
         />
         <ControlButton
+          icon={MonitorUp}
           label={isScreenShareEnabled ? 'Stop Sharing' : 'Share Screen'}
           active={isScreenShareEnabled}
           onPress={() => localParticipant.setScreenShareEnabled(!isScreenShareEnabled)}
         />
-        <ControlButton label="Chat" badge={unreadCount} onPress={openChat} />
+        <ControlButton icon={MessageSquare} label="Chat" badge={unreadCount} onPress={openChat} />
+        <ControlButton icon={LogOut} label="Leave" danger onPress={onLeave} />
       </View>
     </View>
   );
@@ -519,25 +530,19 @@ const styles = StyleSheet.create({
   },
   controlBtnShape: {
     position: 'relative',
-    borderRadius: 999,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     overflow: 'hidden',
   },
   controlBtnFill: {
-    paddingVertical: 12,
-    paddingHorizontal: 18,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   controlBtnBordered: {
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  controlBtnDangerBorder: {
-    borderColor: colors.error,
-  },
-  controlBtnInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   pressed: {
     opacity: 0.8,
