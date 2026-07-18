@@ -203,6 +203,7 @@ function LessonRoomContent() {
           video={false}
           onDisconnected={handleLeave}
           style={{ height: '100%' }}
+          data-lk-theme="default"
         >
           <VideoConference />
         </LiveKitRoom>
