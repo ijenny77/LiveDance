@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   LiveKitRoom,
   AudioSession,
@@ -167,6 +168,66 @@ function initials(label: string) {
   return label.trim().charAt(0).toUpperCase() || '?';
 }
 
+function Avatar({ label }: { label: string }) {
+  return (
+    <View style={styles.avatarPlaceholder}>
+      <LinearGradient colors={[colors.uvPurple, colors.uvBlue]} style={styles.avatarCircle}>
+        <Text style={styles.avatarInitial}>{initials(label)}</Text>
+      </LinearGradient>
+    </View>
+  );
+}
+
+function ControlButton({
+  label,
+  active,
+  danger,
+  badge,
+  onPress,
+}: {
+  label: string;
+  active?: boolean;
+  danger?: boolean;
+  badge?: number;
+  onPress: () => void;
+}) {
+  const content = (
+    <View style={styles.controlBtnInner}>
+      <Text style={[styles.controlText, active && styles.controlTextActive]}>{label}</Text>
+      {!!badge && (
+        <View style={styles.chatBadge}>
+          <Text style={styles.chatBadgeText}>{badge}</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  if (active) {
+    return (
+      <Pressable onPress={onPress} style={({ pressed }) => [styles.controlBtnShape, pressed && styles.pressed]}>
+        <LinearGradient colors={[colors.uvPurple, colors.uvBlue]} style={styles.controlBtnFill}>
+          {content}
+        </LinearGradient>
+      </Pressable>
+    );
+  }
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.controlBtnShape,
+        styles.controlBtnFill,
+        styles.controlBtnNeutral,
+        danger && styles.controlBtnDanger,
+        pressed && styles.pressed,
+      ]}
+    >
+      {content}
+    </Pressable>
+  );
+}
+
 function CallView({ insetsBottom }: { insetsBottom: number }) {
   // withPlaceholder keeps every participant visible (as an avatar) even before
   // they've published a camera track — otherwise anyone joining camera-off is
@@ -218,11 +279,7 @@ function CallView({ insetsBottom }: { insetsBottom: number }) {
           {isTrackReference(mainTrack) ? (
             <VideoTrack trackRef={mainTrack} style={styles.video} objectFit="contain" />
           ) : (
-            <View style={styles.avatarPlaceholder}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarInitial}>{initials(mainLabel)}</Text>
-              </View>
-            </View>
+            <Avatar label={mainLabel} />
           )}
           <Text style={styles.videoLabel} numberOfLines={1}>
             {mainLabel}
@@ -242,11 +299,7 @@ function CallView({ insetsBottom }: { insetsBottom: number }) {
                 {isTrackReference(track) ? (
                   <VideoTrack trackRef={track} style={styles.video} objectFit="cover" />
                 ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <View style={styles.avatarCircle}>
-                      <Text style={styles.avatarInitial}>{initials(label)}</Text>
-                    </View>
-                  </View>
+                  <Avatar label={label} />
                 )}
                 <Text style={styles.videoLabel} numberOfLines={1}>
                   {label}
@@ -301,32 +354,23 @@ function CallView({ insetsBottom }: { insetsBottom: number }) {
       </Modal>
 
       <View style={[styles.controls, { paddingBottom: insetsBottom + 14 }]}>
-        <Pressable
-          style={[styles.controlBtn, !isMicrophoneEnabled && styles.controlBtnOff]}
+        <ControlButton
+          label={isMicrophoneEnabled ? 'Mute' : 'Unmute'}
+          active={isMicrophoneEnabled}
+          danger={!isMicrophoneEnabled}
           onPress={() => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
-        >
-          <Text style={styles.controlText}>{isMicrophoneEnabled ? 'Mute' : 'Unmute'}</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.controlBtn, !isCameraEnabled && styles.controlBtnOff]}
+        />
+        <ControlButton
+          label={isCameraEnabled ? 'Camera Off' : 'Camera On'}
+          active={isCameraEnabled}
           onPress={() => localParticipant.setCameraEnabled(!isCameraEnabled)}
-        >
-          <Text style={styles.controlText}>{isCameraEnabled ? 'Camera Off' : 'Camera On'}</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.controlBtn, isScreenShareEnabled && styles.controlBtnOff]}
+        />
+        <ControlButton
+          label={isScreenShareEnabled ? 'Stop Sharing' : 'Share Screen'}
+          active={isScreenShareEnabled}
           onPress={() => localParticipant.setScreenShareEnabled(!isScreenShareEnabled)}
-        >
-          <Text style={styles.controlText}>{isScreenShareEnabled ? 'Stop Sharing' : 'Share Screen'}</Text>
-        </Pressable>
-        <Pressable style={styles.controlBtn} onPress={openChat}>
-          <Text style={styles.controlText}>Chat</Text>
-          {unreadCount > 0 && (
-            <View style={styles.chatBadge}>
-              <Text style={styles.chatBadgeText}>{unreadCount}</Text>
-            </View>
-          )}
-        </Pressable>
+        />
+        <ControlButton label="Chat" badge={unreadCount} onPress={openChat} />
       </View>
     </View>
   );
@@ -357,8 +401,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.uvPurple + '55',
     backgroundColor: colors.bgElevated,
+    shadowColor: colors.uvPurple,
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
   headerRight: {
     flexDirection: 'row',
@@ -400,78 +449,112 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
+    padding: 3,
+    backgroundColor: colors.bgBase,
   },
   videoTileFull: {
     width: '100%',
     height: '100%',
+    padding: 3,
+    backgroundColor: colors.bgBase,
   },
   videoTileGrid: {
     width: '50%',
     height: '50%',
+    padding: 3,
   },
   video: {
     flex: 1,
     backgroundColor: '#111',
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   videoLabel: {
     position: 'absolute',
-    left: 8,
-    bottom: 8,
+    left: 14,
+    bottom: 12,
     color: colors.textPrimary,
     fontSize: 11,
-    fontWeight: '600',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    backgroundColor: 'rgba(13,13,18,0.75)',
+    borderWidth: 1,
+    borderColor: colors.uvPurple + '66',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
   avatarPlaceholder: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.bgElevated2,
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   avatarCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.uvPurple,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: colors.uvPurple,
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 10,
   },
   avatarInitial: {
-    color: colors.textPrimary,
-    fontSize: 28,
-    fontWeight: '700',
+    color: '#fff',
+    fontSize: 30,
+    fontWeight: '800',
   },
   controls: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
     backgroundColor: colors.bgElevated,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: colors.uvPurple + '33',
   },
-  controlBtn: {
+  controlBtnShape: {
     position: 'relative',
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  controlBtnFill: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  controlBtnNeutral: {
+    backgroundColor: colors.bgElevated2,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    backgroundColor: colors.bgElevated2,
   },
-  controlBtnOff: {
-    backgroundColor: colors.error,
+  controlBtnDanger: {
+    backgroundColor: colors.error + '26',
     borderColor: colors.error,
+  },
+  controlBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pressed: {
+    opacity: 0.8,
   },
   controlText: {
     color: colors.textPrimary,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  controlTextActive: {
+    color: '#fff',
   },
   chatBadge: {
     position: 'absolute',
