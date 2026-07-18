@@ -3,7 +3,6 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { LiveKitRoom, VideoConference } from '@livekit/components-react';
-import '@livekit/components-styles';
 import { supabase } from '@/lib/supabase';
 import { resolveSession, leaveLessonAttendance } from '@/app/actions/student';
 import { getLiveKitToken } from '@/app/actions/livekit';
