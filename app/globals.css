@@ -98,3 +98,18 @@
   min-height: 69px;
 }
 
+/* Mobile camera capture (via react-native-webrtc) can report raw sensor
+   dimensions instead of device-rotated ones, so LiveKit's landscape/portrait
+   detection (based on those reported dimensions) sometimes misjudges a
+   portrait phone video as landscape and applies object-fit: cover, which
+   aggressively crops/zooms the video to fill its tile. Force contain
+   unconditionally so a video can never overflow its tile's bounds,
+   regardless of what dimensions the publishing device reports. */
+.lk-participant-media-video {
+  object-fit: contain !important;
+  background-color: var(--lk-bg2);
+}
+.lk-participant-tile {
+  overflow: hidden;
+}
+
