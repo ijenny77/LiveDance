@@ -2,8 +2,11 @@
 
 import React, { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import { LiveKitRoom, VideoConference } from '@livekit/components-react';
+import '@livekit/components-styles';
 import { supabase } from '@/lib/supabase';
 import { resolveSession, leaveLessonAttendance } from '@/app/actions/student';
+import { getLiveKitToken } from '@/app/actions/livekit';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Lesson } from '@/types';
@@ -20,6 +23,8 @@ function LessonRoomContent() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
+  const [livekitToken, setLivekitToken] = useState<string | null>(null);
 
   useEffect(() => {
     const verifyAccess = async () => {
@@ -48,7 +53,15 @@ function LessonRoomContent() {
             return;
           }
 
+          const lkRes = await getLiveKitToken(lessonId, 'admin', session.access_token);
+          if (!lkRes.success || !lkRes.url || !lkRes.token) {
+            router.push('/admin');
+            return;
+          }
+
           setLesson(lessonData as Lesson);
+          setLivekitUrl(lkRes.url);
+          setLivekitToken(lkRes.token);
           setAuthorized(true);
           return;
         }
@@ -67,7 +80,15 @@ function LessonRoomContent() {
           return;
         }
 
+        const lkRes = await getLiveKitToken(lessonId, token);
+        if (!lkRes.success || !lkRes.url || !lkRes.token) {
+          router.push(`/status?token=${token}`);
+          return;
+        }
+
         setLesson(res.lesson);
+        setLivekitUrl(lkRes.url);
+        setLivekitToken(lkRes.token);
         setAuthorized(true);
       } catch (err) {
         console.error('Error verifying lesson access:', err);
@@ -138,14 +159,9 @@ function LessonRoomContent() {
     );
   }
 
-  if (!authorized || !lesson) {
+  if (!authorized || !lesson || !livekitUrl || !livekitToken) {
     return null; // verification hook redirects
   }
-
-  // Construct Jitsi iframe URL.
-  // We can pass prejoin page disabled and other styling configurations.
-  const jitsiRoomName = `LiveDance_${lesson.meeting_room || lesson.id.substring(0, 8)}`;
-  const jitsiUrl = `https://meet.jit.si/${jitsiRoomName}#config.prejoinPageEnabled=false&config.startWithAudioMuted=true&config.startWithVideoMuted=true&interfaceConfig.SHOW_JITSI_WATERMARK=false`;
 
   return (
     <div className="flex flex-col h-screen bg-bg-base overflow-hidden">
@@ -167,7 +183,7 @@ function LessonRoomContent() {
 
         <div className="flex items-center gap-4">
           <Badge status="live" label="LIVE" />
-          
+
           <Button
             variant="outline"
             className="px-3.5 py-1.5 h-8 text-xs font-semibold normal-case"
@@ -178,13 +194,19 @@ function LessonRoomContent() {
         </div>
       </header>
 
-      {/* Jitsi Meet Iframe Container */}
+      {/* LiveKit Video Conference */}
       <div className="flex-1 w-full bg-black relative">
-        <iframe
-          src={jitsiUrl}
-          className="absolute inset-0 w-full h-full border-0"
-          allow="camera; microphone; fullscreen; display-capture; autoplay"
-        />
+        <LiveKitRoom
+          serverUrl={livekitUrl}
+          token={livekitToken}
+          connect
+          audio
+          video={false}
+          onDisconnected={handleLeave}
+          style={{ height: '100%' }}
+        >
+          <VideoConference />
+        </LiveKitRoom>
       </div>
     </div>
   );
