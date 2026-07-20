@@ -1,19 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LayoutDashboard, Calendar, CreditCard, Users, ClipboardCheck } from 'lucide-react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme';
 import { supabase } from '../../lib/supabase';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, any>;
+type TabIcon = React.ComponentType<{ size?: number; color?: string }>;
 
-const TABS: { key: keyof RootStackParamList; label: string }[] = [
-  { key: 'AdminDashboard', label: 'Dashboard' },
-  { key: 'AdminLessons', label: 'Lessons' },
-  { key: 'AdminPayments', label: 'Payments' },
-  { key: 'AdminStudents', label: 'Students' },
-  { key: 'AdminAttendance', label: 'Attendance' },
+const TABS: { key: keyof RootStackParamList; label: string; icon: TabIcon }[] = [
+  { key: 'AdminDashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'AdminLessons', label: 'Lessons', icon: Calendar },
+  { key: 'AdminPayments', label: 'Payments', icon: CreditCard },
+  { key: 'AdminStudents', label: 'Students', icon: Users },
+  { key: 'AdminAttendance', label: 'Attendance', icon: ClipboardCheck },
 ];
 
 interface AdminShellProps {
@@ -66,17 +68,26 @@ export function AdminShell({ navigation, active, title, subtitle, children }: Ad
     <View style={styles.screen}>
       <View style={[styles.tabBarRow, { paddingTop: insets.top + 10 }]}>
         <View style={styles.tabRow}>
-          {TABS.map((tab) => (
-            <Pressable
-              key={tab.key}
-              onPress={() => tab.key !== active && navigation.replace(tab.key as any)}
-              style={[styles.tab, tab.key === active && styles.tabActive]}
-            >
-              <Text style={[styles.tabText, tab.key === active && styles.tabTextActive]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                {tab.label}
-              </Text>
-            </Pressable>
-          ))}
+          {TABS.map((tab) => {
+            const isActive = tab.key === active;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => !isActive && navigation.replace(tab.key as any)}
+                style={[styles.tab, isActive && styles.tabActive]}
+              >
+                <tab.icon size={18} color={isActive ? '#fff' : colors.textSecondary} />
+                <Text
+                  style={[styles.tabText, isActive && styles.tabTextActive]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
         <Pressable onPress={handleLogout} style={styles.logoutBtn}>
           <Text style={styles.logoutText}>Logout</Text>
@@ -128,9 +139,11 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 7,
+    gap: 3,
+    paddingVertical: 8,
     paddingHorizontal: 2,
     borderRadius: 8,
   },
